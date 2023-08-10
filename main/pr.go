@@ -5,10 +5,19 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/gorilla/mux"
 )
 
+func GetProductByID(productID string) (*Product, error) {
+	var product Product
+	result := DB.Where("id = ?", productID).First(&product)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &product, nil
+}
 func getProductDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse product ID from request parameters
 	productID := mux.Vars(r)["id"]
@@ -40,6 +49,7 @@ func getProductDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(productWithRecommendations)
 }
+
 func createProductHandler(w http.ResponseWriter, r *http.Request) {
 	var newProduct Product
 	err := json.NewDecoder(r.Body).Decode(&newProduct)
@@ -66,56 +76,65 @@ func CreateProduct(product *Product) error {
 }
 
 type Product struct {
-	ID       int     `json:"id"`
-	Name     string  `json:"name"`
-	Price    float64 `json:"price"`
-	Category string  `json:"category"`
-	// Add more fields as needed
-}
-
-func GetProductRecommendations(userID int, category string) ([]Product, error) {
-	// Implement your recommendation algorithm here
-	// Fetch user interactions from the database for the given userID
-	userInteractions, err := GetUserInteractions(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Fetch products from the same category
-	relatedProducts, err := GetProductsByCategory(category)
-	if err != nil {
-		return nil, err
-	}
-
-	// Apply the recommendation algorithm to calculate weighted scores
-	const inCategory = 1.0
-	const other = 0.5
-
-	recommendedProducts := make([]Product, 0)
-	for _, product := range relatedProducts {
-		var weightedScore float64
-		if product.Category == category {
-			weightedScore = float64(product.Interactions) * inCategory
-		} else {
-			weightedScore = float64(product.Interactions) * other
-		}
-		product.WeightedScore = weightedScore
-		recommendedProducts = append(recommendedProducts, product)
-	}
-
-	// Sort recommended products by weighted score in descending order
-	sort.SliceStable(recommendedProducts, func(i, j int) bool {
-		return recommendedProducts[j].WeightedScore < recommendedProducts[i].WeightedScore
-	})
-
-	return recommendedProducts, nil
-}
-
-type Product struct {
-	ID            int     `json:"id"`
+	ID            uint `gorm:"primaryKey"`
+	CreatedAt     time.Time
 	Name          string  `json:"name"`
 	Category      string  `json:"category"`
 	Price         float64 `json:"price"`
 	Interactions  int     `json:"interactions"`
-	WeightedScore float64 `json:"weighted_score"` // Add this field
+	WeightedScore float64 `json:"weighted_score"`
+}
+
+func GetProductsByCategory(category string, sortBy string, order string) ([]Product, error) {
+	var products []Product
+
+	// Construct the ORDER BY clause based on the sortBy and order parameters
+	orderClause := fmt.Sprintf("%s %s", sortBy, order)
+
+	// Use the orderClause in your SQL query
+	result := DB.Where("category = ?", category).Order(orderClause).Find(&products)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return products, nil
+}
+
+func sortProductsHandler(w http.ResponseWriter, r *http.Request) {
+	category := r.URL.Query().Get("category") // Get the category from query parameter
+	sortBy := r.URL.Query().Get("sortBy")     // Get the sorting field from query parameter
+	order := r.URL.Query().Get("order")       // Get the order (asc or desc) from query parameter
+
+	if category == "" || sortBy == "" || (order != "asc" && order != "desc") {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch products from the database based on category, sortBy, and order
+	products, err := GetProductsByCategory(category, sortBy, order)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Sort products based on the specified field and order
+	switch sortBy {
+	case "price":
+		sort.Slice(products, func(i, j int) bool {
+			if order == "asc" {
+				return products[i].Price < products[j].Price
+			}
+			return products[i].Price > products[j].Price
+		})
+	case "created_at":
+		sort.Slice(products, func(i, j int) bool {
+			if order == "asc" {
+				return products[i].CreatedAt.Before(products[j].CreatedAt)
+			}
+			return products[i].CreatedAt.After(products[j].CreatedAt)
+		})
+	}
+
+	// Respond with JSON containing sorted products
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(products)
 }
