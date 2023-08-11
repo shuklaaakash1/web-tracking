@@ -1,6 +1,9 @@
 package main
 
-import "sort"
+import (
+	"sort"
+	"strconv"
+)
 
 func GetProductRecommendations(productID string) ([]Product, error) {
 	// Fetch the product from the database by its ID
@@ -9,7 +12,6 @@ func GetProductRecommendations(productID string) ([]Product, error) {
 		return nil, err
 	}
 
-	// Fetch products from the same category
 	relatedProducts, err := GetProductsByCategory(product.Category, "", "")
 	if err != nil {
 		return nil, err
@@ -37,4 +39,47 @@ func GetProductRecommendations(productID string) ([]Product, error) {
 	})
 
 	return recommendedProducts, nil
+}
+
+// type Interaction struct {
+// 	ID        uint `gorm:"primaryKey"`
+// 	UserID    uint `json:"user_id"`
+// 	ProductID uint `json:"product_id"`
+// 	// ... other fields ...
+// }
+
+func UpdateProductInteractions(productID uint) error {
+	// Convert uint to string
+	productIDStr := strconv.FormatUint(uint64(productID), 10)
+
+	product, err := GetProductByID(productIDStr)
+	if err != nil {
+		return err
+	}
+	product.Interactions++
+	return DB.Save(product).Error
+}
+
+func GetRelatedUsersForProduct(productID uint) ([]User, error) {
+	// Fetch interactions for the given product
+	var interactions []Interaction
+	result := DB.Where("product_id = ?", productID).Find(&interactions)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	// Collect user IDs from interactions as uint values
+	userIDs := make([]uint, len(interactions))
+	for i, interaction := range interactions {
+		userIDs[i] = interaction.UserID
+	}
+
+	// Fetch users with the collected user IDs
+	var relatedUsers []User
+	result = DB.Where("id IN ?", userIDs).Find(&relatedUsers)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return relatedUsers, nil
 }
