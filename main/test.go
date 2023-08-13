@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoginHandler(t *testing.T) {
@@ -30,9 +32,6 @@ func TestLoginHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Here, you can decode the JWT token and verify its claims
-	// For brevity, we skip the JWT token validation in this example
-	// You can add more tests for token validation separately
 	assert.NotEmpty(t, response.Token)
 }
 
@@ -77,10 +76,8 @@ func TestCreateUserHandler(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "User created successfully")
 }
 
-// Add more unit tests for other functions as needed
-
 func TestGenerateToken(t *testing.T) {
-	// Create a test user
+
 	user := User{
 		ID:       1,
 		Username: "testuser",
